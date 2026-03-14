@@ -1,4 +1,4 @@
-import multer from 'multer';
+/*import multer from 'multer';
 import { fileURLToPath } from 'url';
 import fs from 'fs'
 import path from 'path';
@@ -21,4 +21,22 @@ const storage = multer.diskStorage({
 export const upload = () => {
     let upload_middleware = multer({ storage });
     return upload_middleware.single('audio');
+}*/
+
+import { audio_data } from "./audio_data.js";
+import { storageService } from "./storageServices.js";
+
+
+
+export async function upload(req, res) {
+    try {
+        await storageService.save(req.file.buffer, req.file.originalname);
+
+        const url = storageService.getUrl(req.file.originalname);
+
+        audio_data(JSON.parse(req.body.data), url)
+        res.json({ url });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 }

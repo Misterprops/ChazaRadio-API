@@ -2,17 +2,26 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import multer from "multer";
+import dotenv from "dotenv";
 import { fileURLToPath } from 'url';
-import { download } from './download.js';
+//import { download } from './download.js';
 import { upload } from './upload.js';
-import { uploader } from './uploader.js';
+//import { uploader } from './uploader.js';
 import { fetch_audios } from './fetch_audios.js';
 import { mail_register } from './mail_register.js';
 import { mail_verificar } from './mail_verificar.js';
+import { conectardb } from './conectordb.js';
+import { user_data, user_login, user_register } from './user_data.js';
+import { get_posts, upload_post } from './upload_post.js';
+import { get_audios } from './audio_data.js';
+import { get_poadcasts, upload_poadcast } from './poadcast_data.js';
 
 const app = express();
+dotenv.config();
 
 const port = process.env.PORT || 3000;
+const uri = process.env.URI || "mongodb://localhost:27017/ChazaRadio";
 
 app.use(cors());
 app.use(express.json());
@@ -21,10 +30,14 @@ app.listen(port, () => {
     console.log(`Servidor Node escuchando en http://localhost:${port}`);
 });
 
-app.post('/api/descargar', async (req, res) => { download(req, res) })
+const uploader = multer();
 
-app.post('/api/upload', upload(), (req, res) => { uploader(req, res, port) })
+app.post("/api/upload", uploader.single("audio"), async (req, res) => { upload(req, res) });
+//-------------------------------------------------
+//app.post('/api/descargar', async (req, res) => { download(req, res) })
 
+//app.post('/api/upload', upload(), (req, res) => { uploader(req, res, port) })
+//-------------------------------------------------
 //fectch audio
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,27 +53,25 @@ const uploadsPath = path.join(__dirname, "./media");
 
 app.get("/audios", (req, res) => { fetch_audios(req, res, uploadsPath, port) })
 
-//mail-sender
+app.post('/api/registro', async (req, res) => { user_register(req, res) })
 
-function generarCodigo() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-}
+app.post('/api/verificar', async (req, res) => { mail_verificar(req, res) });
 
-var db = {}
-app.post('/api/registro', async (req, res) => {
-    const { email, password } = req.body;
-    // Guardar usuario con código y expiración de 10 minutos
-    db = {
-        email,
-        password,
-        isVerified: false,
-        codigo: generarCodigo(),
-        codeExpires: Date.now() + 10 * 60 * 1000
-    }
-    mail_register(db, res)
-})
+await conectardb(uri)
 
-app.post('/api/verificar', async (req, res) => { mail_verificar(req, res, db) });
+app.post('/api/user_data', async (req, res) => { user_data(req, res) });
+
+app.post('/api/login', async (req, res) => { user_login(req, res) });
+
+app.post("/api/upload_post", async (req, res) => { upload_post(req, res) });
+
+app.post("/api/get_posts", async (req, res) => { get_posts(req, res) });
+
+app.post("/api/get_audios", async (req, res) => { get_audios(req, res) });
+
+app.post("/api/upload_poadcast", async (req, res) => { upload_poadcast(req, res) });
+
+app.post("/api/get_poadcast", async (req, res) => { get_poadcasts(req, res) });
 
 //database
 /*import pkg from 'pg';
