@@ -14,7 +14,7 @@ import { mail_verificar } from './mail_verificar.js';
 import { conectardb } from './conectordb.js';
 import { user_data, user_login, user_register } from './user_data.js';
 import { get_posts, upload_post } from './upload_post.js';
-import { get_audios } from './audio_data.js';
+import { get_audios, get_sounds } from './audio_data.js';
 import { get_poadcasts, upload_poadcast } from './poadcast_data.js';
 
 const app = express();
@@ -68,6 +68,8 @@ app.post("/api/upload_post", async (req, res) => { upload_post(req, res) });
 app.post("/api/get_posts", async (req, res) => { get_posts(req, res) });
 
 app.post("/api/get_audios", async (req, res) => { get_audios(req, res) });
+
+app.get("/api/get_sounds", async (req, res) => { get_sounds(req, res) });
 
 app.post("/api/upload_poadcast", async (req, res) => { upload_poadcast(req, res) });
 
