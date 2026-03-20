@@ -24,18 +24,19 @@ export async function get_posts(req, res) {
     const esquema = new mongoose.Schema({
         mensaje: String,
         link: String,
-        nombre: String
+        nombre: String,
+        tipo: String
     });
 
     const posts = mongoose.models.posts || mongoose.model("posts", esquema, "Posts");
 
-    const page = 1;
+    const page = req.body.page || 1;
     const limit = 10;
     const skip = (page - 1) * limit;
 
     const publicaciones = await posts
         .find()
-        .sort({ createdAt: -1 })
+        .sort({ creacion: -1 })
         .skip(skip)
         .limit(limit);
 

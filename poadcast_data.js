@@ -48,13 +48,9 @@ export async function get_poadcasts(req, res) {
 
     const poadcasts = mongoose.models.poadcasts || mongoose.model("poadcasts", esquema, "Poadcasts");
 
-    const page = 1;
-    const limit = 10;
-    const skip = (page - 1) * limit;
-
-    const audios = await poadcasts
+    const charlas = await poadcasts
         .find()
         .sort({ nombre: 1 });
 
-    return res.json(audios)
+    return res.json(charlas)
 }
