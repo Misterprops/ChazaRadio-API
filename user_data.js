@@ -28,7 +28,7 @@ export async function user_login(req, res) {
     try {
         const usuario = await user_log.findOne({ id: req.body.id }, { id: 1, contraseña: 1, correo: 1, verificado: 1, rol: 1, _id: 0 });
         if (usuario == null) return res.status(400).json({ error: "Usuario no encontrado" });
-        if (usuario.verificado == false) return res.status(400).json({ error: "Usuario no verificado" });
+        if (usuario.verificado == false) return res.status(401).json({ error: "Usuario no verificado" });
         if (req.body.password != usuario.contraseña) return res.status(400).json({ error: "Contraseña incorrecta" });
         const accessToken = generateAccessToken({ id: usuario.id, correo: usuario.correo, rol: usuario.rol })
         res.json(accessToken);

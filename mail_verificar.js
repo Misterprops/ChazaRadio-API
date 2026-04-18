@@ -6,7 +6,7 @@ const user_ver = mongoose.models.user_ver || mongoose.model("user_ver", esquema,
 
 export const mail_verificar = async (req, res) => {
 
-    if (verificar(req.body.id)) {
+    if (await verificar(req.body.id)) {
         const esquema = new mongoose.Schema({
             id: String,
             codigo: String,
