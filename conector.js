@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from "multer";
 import dotenv from "dotenv";
+dotenv.config();
 //import { download } from './download.js';
 import { upload } from './upload.js';
 import { mail_verificar } from './mail_verificar.js';
@@ -13,7 +14,6 @@ import { get_poadcasts, upload_poadcast } from './poadcast_data.js';
 import { get_likeList, likeControl } from './like_control.js';
 
 const app = express();
-dotenv.config();
 
 const port = process.env.PORT || 3000;
 const uri = process.env.URI || "mongodb://localhost:27017/ChazaRadio";
@@ -29,7 +29,8 @@ app.listen(port, () => {
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
-import { authenticateToken } from './tokenServices.js';
+import { authenticateToken, reloadAccessToken } from './tokenServices.js';
+import { request_code } from './mail_sender.js';
 
 //fectch audio
 const __filename = fileURLToPath(import.meta.url);
@@ -46,7 +47,7 @@ app.use("/media", express.static(path.join(__dirname, "./media")));
 
 const uploader = multer();
 
-app.post("/api/upload", uploader.single("audio"), async (req, res) => { upload(req, res) }); // Revisar upload en blob
+app.post("/api/upload", authenticateToken, uploader.single("audio"), async (req, res) => { upload(req, res) }); // Revisar upload en blob
 
 app.post('/api/registro', async (req, res) => { user_register(req, res) });
 
@@ -59,6 +60,10 @@ app.post('/api/user_data', authenticateToken, async (req, res) => { user_data(re
 app.get("/api/verify", authenticateToken, (req, res) => {
     res.json({ valid: true })
 })
+
+app.post("/api/retoken", authenticateToken, async (req, res) => { reloadAccessToken(req, res) });
+
+app.post("/api/recode", async (req, res) => {request_code(req, res)})
 
 app.post('/api/login', async (req, res) => { user_login(req, res) });
 
@@ -74,6 +79,6 @@ app.post("/api/get_likeList", authenticateToken, async (req, res) => { get_likeL
 
 app.get("/api/get_sounds", async (req, res) => { get_sounds(req, res) });
 
-app.post("/api/upload_poadcast", async (req, res) => { upload_poadcast(req, res) }); // Revisar para cache automatico
+app.post("/api/upload_poadcast", authenticateToken, async (req, res) => { upload_poadcast(req, res) }); // Revisar para cache automatico
 
 app.post("/api/get_poadcast", async (req, res) => { get_poadcasts(req, res) }); // Revisar rastreo de id

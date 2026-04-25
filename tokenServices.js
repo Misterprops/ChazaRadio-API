@@ -5,14 +5,33 @@ export function generateAccessToken(user) {
     return jwt.sign(
         {
             id: user.id,
-            email: user.correo,
+            correo: user.correo,
+            nombre: user.nombre,
             rol: user.rol
         },
         process.env.ACCESS_TOKEN_SECRET,
         {
-            expiresIn: "25m"
+            expiresIn: "20m"
         }
     )
+}
+
+export function reloadAccessToken(req, res) {
+    const user = req.user;
+
+    const token = jwt.sign(
+        {
+            id: user.id,
+            correo: user.correo,
+            nombre: user.nombre,
+            rol: user.rol
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        {
+            expiresIn: "20m"
+        }
+    )
+    res.json(token);
 }
 
 export async function authenticateToken(req, res, next) {

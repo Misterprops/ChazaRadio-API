@@ -36,7 +36,6 @@ export async function audio_data(data, url) {
 
 export async function get_audios(req, res) {
     if (!cacheServices(cache)) {
-        console.log("BUSCANDOO")
         await search_audios()
     }
     return res.json(cache.data)
