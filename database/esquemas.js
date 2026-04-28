@@ -76,3 +76,39 @@ const esquemaPoadcast = new mongoose.Schema({
 });
 
 export const poadcast = mongoose.models.poadcast || mongoose.model("poadcast", esquemaPoadcast, "Poadcasts");
+
+//Esquemas posts
+//Publicar post
+const esquemaUploadPost = new mongoose.Schema({
+    id: String,
+    mensaje: String,
+    link: String,
+    nombre: String,
+    tipo: String,
+    creacion: { type: Date, default: Date.now }
+});
+
+export const uploadPost = mongoose.models.uploadPost || mongoose.model("uploadPost", esquemaUploadPost, "Posts");
+
+//Obtener posts
+const esquemaGetPosts = new mongoose.Schema({
+    id: String,
+    mensaje: String,
+    link: String,
+    nombre: String,
+    tipo: String,
+    enabled: Boolean
+});
+
+export const getPosts = mongoose.models.getPosts || mongoose.model("getPosts", esquemaGetPosts, "Posts");
+
+//Obtener audios
+const esquemaGetAudios = new mongoose.Schema({
+    url: String,
+    titulo: String,
+    likes: Number,
+    autor: String,
+    escuchada: Boolean
+});
+
+export const getAudios = mongoose.models.getAudios || mongoose.model("getAudios", esquemaGetAudios, "Audios");

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { cacheServices } from "./cacheServices.js";
+import { getAudios } from "./database/esquemas.js";
 
 let cache = {
     data: null,
@@ -71,17 +72,7 @@ export async function get_sounds(req, res) {
 }
 
 const search_audios = async () => {
-    const esquema = new mongoose.Schema({
-        url: String,
-        titulo: String,
-        likes: Number,
-        autor: String,
-        escuchada: Boolean
-    });
-
-    const audios = mongoose.models.audios || mongoose.model("audios", esquema, "Audios");
-
-    const songs = await audios.find();
+    const songs = await getAudios.find();
 
     if (songs.every(s => historial.includes(s._id.toString()))) {
         historial = [] // reset inteligente

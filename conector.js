@@ -8,7 +8,7 @@ import { upload } from './upload.js';
 import { mail_verificar } from './mail_verificar.js';
 import { conectardb } from './conectordb.js';
 import { user_data, user_login, user_register } from './user_data.js';
-import { get_posts, upload_post } from './upload_post.js';
+import { delete_post, get_posts, upload_post } from './upload_post.js';
 import { get_audios, get_sounds } from './audio_data.js';
 import { get_poadcasts, upload_poadcast } from './poadcast_data.js';
 import { get_likeList, likeControl } from './like_control.js';
@@ -67,7 +67,9 @@ app.post("/api/recode", async (req, res) => {request_code(req, res)})
 
 app.post('/api/login', async (req, res) => { user_login(req, res) });
 
-app.post("/api/upload_post", async (req, res) => { upload_post(req, res) });
+app.post("/api/upload_post", authenticateToken, async (req, res) => { upload_post(req, res) });
+
+app.post("/api/delete_post", authenticateToken, async (req, res) => { delete_post(req, res) });
 
 app.post("/api/get_posts", async (req, res) => { get_posts(req, res) }); // Revisar para cache de 50 aprox y nuevos campos: lastSeen y LastPage
 
