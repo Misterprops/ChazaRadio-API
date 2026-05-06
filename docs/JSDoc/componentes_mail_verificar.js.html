@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: componentes/mail_verificar.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: componentes/mail_verificar.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { codeVer, userVer } from "../database/esquemas.js";
+
+/**
+ * Verifica el código enviado al usuario.
+ * 
+ * @async
+ * @function mail_verificar
+ * 
+ * @param {Request} req - Objeto Request de Express
+ * @param {string} req.body.id - ID del usuario
+ * @param {string} req.body.codigo - Codigo de verificacion
+ * @param {Object} res - Objeto Response de Express
+ * 
+ * @returns {Response} Respuesta HTTP:
+ * - 200: Audio subido correctamente
+ * - 400: Datos inconsistentes
+ * - 500: Error interno del servidor
+ * 
+ * @sideEffects
+ * - Actualiza DB
+ * 
+ * @dependencies
+ * - Revisar funcion verificar()
+ * - Revisar funcion actualizar_usuario()
+ * - Revisar esquema codeVer
+ * - Revisar constante externa validarMailVerificar
+ * 
+ * @description
+ * - Endpoint que verifica el codigo del usuario para marcarlo como usuario verificado y darle acceso a la red social
+ */
+export const mail_verificar = async (req, res) => {
+
+    if (await verificar(req.body.id)) {
+        try {
+            const codigo = await codeVer.findOne({ id: req.body.id }, { codigo: 1, vencimiento: 1, _id: 0 });
+            if (codigo == null) return res.status(400).json({ error: "Usuario no encontrado" });
+            if (codigo.codigo !== req.body.codigo) return res.status(400).json({ error: 'Código incorrecto' });
+            if (Date.now() > codigo.vencimiento) return res.status(400).json({ error: 'El código expiró' });
+
+            await actualizar_usuario(req.body.id);
+
+            return res.status(200).json({ msg: 'Cuenta verificada exitosamente', codigo });
+        } catch (err) {
+            return res.status(500).json({ error: "Error al verificar la cuenta" });
+        }
+    } else {
+        return res.status(400).json({ error: "Usuario no encontrado o verificado" });
+    }
+}
+
+/**
+ * Marca un usuario como verificado en la base de datos.
+ * 
+ * @async
+ * @function actualizar_usuario
+ * @param {string} id - ID del usuario
+ * @returns {Promise&lt;void>}
+ * 
+ * @sideEffects
+ * - Actualiza DB
+ * 
+ * @dependencies
+ * - Revisar esquema userVer
+ * 
+ * @description
+ * - Se ejecuta después de validar correctamente el código de verificación enviado por correo.
+ */
+const actualizar_usuario = async (id) => {
+    await userVer.findOneAndUpdate({ id: id }, {
+        verificado: true
+    });
+}
+
+/**
+ * Verifica si un usuario existe y aún NO ha sido verificado.
+ * 
+ * @async
+ * @function verificar
+ * @param {string} id - ID del usuario
+ * @returns {Promise&lt;boolean>}
+ * - true: usuario válido para verificación
+ * - false: usuario no existe o ya verificado
+ * @dependencies
+ * - Revisar esquema userVer
+ * @description
+ * - Verifica si el usuario existe y si este no ha sido verificado
+ * @throws
+ * - Retorna false en caso de error, indicando que no se pudo obtener informacion del usuario
+ */
+const verificar = async (id) => {
+    try {
+        const usuario = await userVer.findOne({ id: id }, { verificado: 1, _id: 0 });
+        if (usuario == null) return false
+        if (usuario.verificado) return false
+        return true
+    } catch (err) {
+        return false
+    }
+}</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-conector.html">conector</a></li></ul><h3>Classes</h3><ul><li><a href="storageService.html">storageService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#actualizar_usuario">actualizar_usuario</a></li><li><a href="global.html#authenticateToken">authenticateToken</a></li><li><a href="global.html#borrarAudio">borrarAudio</a></li><li><a href="global.html#cache">cache</a></li><li><a href="global.html#cacheServices">cacheServices</a></li><li><a href="global.html#cambioLikes">cambioLikes</a></li><li><a href="global.html#cantidadLikes">cantidadLikes</a></li><li><a href="global.html#check_code_time">check_code_time</a></li><li><a href="global.html#codeTime">codeTime</a></li><li><a href="global.html#codeVer">codeVer</a></li><li><a href="global.html#conectardb">conectardb</a></li><li><a href="global.html#currentPromise">currentPromise</a></li><li><a href="global.html#delete_audio">delete_audio</a></li><li><a href="global.html#delete_post">delete_post</a></li><li><a href="global.html#esquemaBorrarAudio">esquemaBorrarAudio</a></li><li><a href="global.html#esquemaCantidadLikes">esquemaCantidadLikes</a></li><li><a href="global.html#esquemaGetAudios">esquemaGetAudios</a></li><li><a href="global.html#esquemaGetPosts">esquemaGetPosts</a></li><li><a href="global.html#esquemaLikeChange">esquemaLikeChange</a></li><li><a href="global.html#esquemaLikeControl">esquemaLikeControl</a></li><li><a href="global.html#esquemaLikeList">esquemaLikeList</a></li><li><a href="global.html#esquemaSubirAudio">esquemaSubirAudio</a></li><li><a href="global.html#esquemaUpdAudio">esquemaUpdAudio</a></li><li><a href="global.html#generateAccessToken">generateAccessToken</a></li><li><a href="global.html#getAudios">getAudios</a></li><li><a href="global.html#getPosts">getPosts</a></li><li><a href="global.html#getUrl">getUrl</a></li><li><a href="global.html#get_audios">get_audios</a></li><li><a href="global.html#get_likeList">get_likeList</a></li><li><a href="global.html#get_poadcasts">get_poadcasts</a></li><li><a href="global.html#get_posts">get_posts</a></li><li><a href="global.html#get_sounds">get_sounds</a></li><li><a href="global.html#historial">historial</a></li><li><a href="global.html#likeContador">likeContador</a></li><li><a href="global.html#likeControl">likeControl</a></li><li><a href="global.html#likeCreate">likeCreate</a></li><li><a href="global.html#likeList">likeList</a></li><li><a href="global.html#likeUpdater">likeUpdater</a></li><li><a href="global.html#listaLikes">listaLikes</a></li><li><a href="global.html#mail_request">mail_request</a></li><li><a href="global.html#mail_transporter">mail_transporter</a></li><li><a href="global.html#mail_verificar">mail_verificar</a></li><li><a href="global.html#mezclar">mezclar</a></li><li><a href="global.html#newVerificacion">newVerificacion</a></li><li><a href="global.html#ordenarBase">ordenarBase</a></li><li><a href="global.html#organizarCache">organizarCache</a></li><li><a href="global.html#pendingResponses">pendingResponses</a></li><li><a href="global.html#poadcast">poadcast</a></li><li><a href="global.html#poadcast_creator">poadcast_creator</a></li><li><a href="global.html#reloadAccessToken">reloadAccessToken</a></li><li><a href="global.html#request_code">request_code</a></li><li><a href="global.html#save">save</a></li><li><a href="global.html#search_audios">search_audios</a></li><li><a href="global.html#sonando">sonando</a></li><li><a href="global.html#subirAudio">subirAudio</a></li><li><a href="global.html#updateAudio">updateAudio</a></li><li><a href="global.html#update_audio">update_audio</a></li><li><a href="global.html#updater">updater</a></li><li><a href="global.html#uploadPost">uploadPost</a></li><li><a href="global.html#upload_audio">upload_audio</a></li><li><a href="global.html#upload_poadcast">upload_poadcast</a></li><li><a href="global.html#upload_post">upload_post</a></li><li><a href="global.html#user">user</a></li><li><a href="global.html#userMail">userMail</a></li><li><a href="global.html#userReg">userReg</a></li><li><a href="global.html#userVer">userVer</a></li><li><a href="global.html#user_login">user_login</a></li><li><a href="global.html#user_register">user_register</a></li><li><a href="global.html#validarDeleteAudio">validarDeleteAudio</a></li><li><a href="global.html#validarDeletePost">validarDeletePost</a></li><li><a href="global.html#validarGetPosts">validarGetPosts</a></li><li><a href="global.html#validarLikeControl">validarLikeControl</a></li><li><a href="global.html#validarMailVerificar">validarMailVerificar</a></li><li><a href="global.html#validarRegistro">validarRegistro</a></li><li><a href="global.html#validarRequestCode">validarRequestCode</a></li><li><a href="global.html#validarUploadAudio">validarUploadAudio</a></li><li><a href="global.html#validarUploadPoadcast">validarUploadPoadcast</a></li><li><a href="global.html#validarUploadPost">validarUploadPost</a></li><li><a href="global.html#validarUserLogin">validarUserLogin</a></li><li><a href="global.html#verificar">verificar</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 05 2026 19:22:28 GMT-0500 (hora estándar de Colombia)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

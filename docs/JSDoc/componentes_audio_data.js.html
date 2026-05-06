@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: componentes/audio_data.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: componentes/audio_data.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { cacheServices } from "../services/cacheServices.js";
+import { borrarAudio, cambioLikes, cantidadLikes, getAudios, listaLikes, subirAudio, updateAudio } from "../database/esquemas.js";
+import { storageService } from "../services/storageServices.js";
+import { parseBuffer } from "music-metadata";
+import { v4 as uuidv4 } from "uuid";
+
+/**
+ * Cache local de las pistas de audio
+ * Se refrezca automaticamente despues de cada 3 minutos
+ */
+let cache = {
+    data: null,
+    ttl: 180000,
+    lastTtl: Date.now()
+};
+
+/**
+ * Cancion que esta escuchandose actualmente en la radio straming
+ */
+let sonando = null;
+
+/**
+ * Unificacion de solicitudes por parte del radio streaming en get_sounds
+ */
+let currentPromise = null;
+
+/**
+ * Peticiones a get_sounds
+ * Utilizado para dar una sola respuesta a condiciones de carrera
+ */
+let pendingResponses = [];
+
+/**
+ * Historial de canciones
+ * Utilizado para tener un registro de pistas escuchadas que han vuelto a sonar
+ */
+let historial = [];
+
+/**
+ * Sube un archivo de audio, lo valida, lo almacena y lo registra en la base de datos.
+ *
+ * @async
+ * @function upload_audio
+ *
+ * @param {Request} req - Objeto Request de Express
+ * @param {Object} req.file - Archivo recibido por multer (buffer en memoria)
+ * @param {string} req.file.buffer - Buffer binario del audio
+ * @param {string} req.file.mimetype - Tipo MIME del archivo
+ * @param {Object} req.parsedData - Datos parseados desde body.data
+ * @param {string} req.parsedData.titulo - Título del audio
+ * @param {("cancion"|"cuña")} req.parsedData.tipo - Tipo de audio
+ * @param {string} req.parsedData.autor - Autor del audio
+ * @param {Object} req.user - Usuario autenticado (JWT decodificado)
+ * @param {string} req.user.id - ID del usuario
+ *
+ * @param {Object} res - Objeto Response de Express
+ *
+ * @returns {Response} Respuesta HTTP:
+ * - 200: Audio subido correctamente
+ * - 400: Archivo inválido (formato o duración)
+ * - 500: Error interno del servidor
+ * 
+ * @sideEffects
+ * - Actualiza cache
+ * - Actualiza DB
+ * 
+ * @dependencies
+ * - Revisar variable cache
+ * - Revisar funcion cacheServices()
+ * - Revisar funcion organizarCache()
+ * - Revisar esquema subirAudio
+ * - Revisar funcion externa autenticateToken()
+ * - Revisar constante externa validarUploadAudio
+ * - Revisar clase externa storageService
+ *
+ * @description
+ * - Valida formato del archivo (MP3 o WebM)
+ * - Verifica duración según tipo:
+ *   - Cuña: máximo 2 minutos
+ *   - Canción: máximo 7 minutos
+ * - Guarda el archivo en el storage
+ * - Registra el audio en la base de datos
+ * - Actualiza cache en memoria si aplica
+ */
+export async function upload_audio(req, res) {
+    try {
+        //Extrae el buffer y el mimetype de la pista
+        const metadata = await parseBuffer(req.file.buffer, req.file.mimetype);
+
+        //Valida que la pista tenga un formato y que este sea mp3, mpeg o webm
+        if (!metadata.format || (metadata.format.container !== "mp3" &amp;&amp; metadata.format.container !== "EBML/webm" &amp;&amp; metadata.format.container !== "MPEG")) {
+            return res.status(400).json({ error: "El archivo no es un formato válido" });
+        }
+
+        //Crea un nombre unico para la pista
+        const safeName = metadata.format.container === "mp3" ? `${uuidv4()}.mp3` : `${uuidv4()}.webm`;
+
+        //Obtiene la duracion de la pista
+        const duration = metadata.format.duration;
+
+        //Obtiene los datos de titulo, tipo y autor enviados por el usuario
+        const data = req.parsedData;
+
+        //Valida que las cuñas no superen los 2 minutos
+        if (data.tipo === "cuña" &amp;&amp; duration > 120) {
+            return res.status(400).json({ error: "La cuña no puede superar 2 minutos" });
+        }
+
+        //Valida que las canciones no superen los 7 minutos
+        if (data.tipo === "cancion" &amp;&amp; duration > 420) {
+            return res.status(400).json({ error: "La canción no puede superar 7 minutos" });
+        }
+
+        //Crea la pista bajo el nombre generado
+        await storageService.save(req.file.buffer, safeName);
+
+        //Obtiene el url de la pista creada
+        const url = storageService.getUrl(safeName);
+
+        //Inserta los datos de la pista en la base de datos
+        const nuevoAudio = await subirAudio.create({
+            url: url,
+            titulo: data.titulo,
+            tipo: data.tipo,
+            id: req.user.id,
+            autor: data.autor
+        });
+
+        //Si el cache es valido, agrega la pista y organiza el cache
+        if (cacheServices(cache)) {
+            cache.data.push(nuevoAudio);
+            organizarCache(cache.data);
+        }
+
+        res.status(200).json({ msg: "Pista subida con exito" });
+
+    } catch (err) {
+        res.status(500).json({ error: "Error al subir el audio" });
+    }
+
+}
+
+/**
+ * Obtiene la lista de audios disponibles usando cache en memoria.
+ * 
+ * @async
+ * @function get_audios
+ * @param {Request} req - Objeto Request de Express
+ * @param {Response} res - Objeto Response de Express
+ * 
+ * @returns {Promise&lt;Object>} Lista de audios organizados
+ * @returns {Response} Respuesta HTTP:
+ * - 500: Error del servidor
+ * 
+ * @description
+ * - REST point que valida y crea el cache de los audios en la base (cacheServices())
+ * - Realiza la conciliacion entre la lista de likes y el contador en la base de datos (likeUpdater())
+ * - Obtiene la lista de audios de la base de datos
+ * 
+ * @sideEffects
+ * - Actualiza likes
+ * - Consulta DB
+ * - Reorganiza audios
+ * - Actualiza cache
+ * 
+ * @dependencies
+ * - Revisar funcion likeUpdater()
+ * - Revisar funcion search_audios()
+ * - Revisar funcion cacheServices()
+ * - Revisar variable cache
+ */
+export async function get_audios(req, res) {
+    //Si la data del cache no existe o expiró, llama likeUpdater y search_audios
+    try {
+        if (!cacheServices(cache)) {
+            await likeUpdater()
+            await search_audios()
+        }
+        return res.json(cache.data)
+    } catch (err) {
+        res.status(500).json({ error: "Error al obtener los audios" });
+    }
+}
+
+/**
+ * Deshabilita un audio.
+ * 
+ * @async
+ * @function delete_audio
+ * 
+ * @param {Request} req - Objeto Request de Express
+ * @param {string} body.audioId - Id de la pista
+ * @param {Object} req.user - Usuario autenticado (JWT decodificado)
+ * @param {string} req.user.id - ID del usuario
+ * @param {Response} res - Objeto Response de Express
+ * 
+ * @returns {Response} Respuesta HTTP:
+ * - 200: Pista deshabilitada correctamente
+ * - 400: Datos inconsistentes (validarDeleteAudio)
+ * - 403: Usuario no habilitado para eliminar el audio
+ * - 500: Error interno del servidor
+ * 
+ * @security
+ * - Solo el dueño puede eliminarlo
+ * 
+ * @sideEffects
+ * - Marca la pista en DB como deshabilitada
+ * - Remueve de cache
+ * 
+ * @description
+ * - Deshabilita una pista de audio
+ * 
+ * @dependencies
+ * - Revisar esquema borrarAudio
+ * - Revisar tokenServices
+ * - Revisar dataCheckServices
+ * - Revisar variable cache
+ * - Revisar funcion externa autenticateToken()
+ * - Revisar constante externa validarDeleteAudio
+ */
+export async function delete_audio(req, res) {
+    try {
+        //Obtiene el audio y id del creador
+        const audio = await borrarAudio.findById({ _id: req.body.audioId });
+        //Si no encuentra el audio o no es el creador, avisa que no esta autorizado
+        if (!audio || audio.id !== req.user.id) {
+            return res.status(403).json({ error: "No autorizado para eliminar este audio" });
+        }
+        //Actualiza el audio como deshabilitado
+        await borrarAudio.findByIdAndUpdate({ _id: req.body.audioId }, { enabled: false });
+        //Elimina la pista del cache
+        cache.data = cache.data.filter(prev => prev._id.toString() !== req.body.audioId);
+        //Avisa que la pista fue eliminada
+        res.status(200).json({ msg: "Pista borrada" });
+    } catch (err) {
+        res.status(500).json({ error: "Error al borrar la pista" });
+    }
+}
+
+/**
+ * Devuelve el siguiente audio en formato texto para streaming (Icecast/Liquidsoap).
+ * 
+ * @async
+ * @function get_sounds
+ * @param {Request} req - Objeto Request de Express
+ * @param {Response} res - Objeto Response de Express
+ * 
+ * @description
+ * - No retorna JSON
+ * - Maneja múltiples requests concurrentes
+ * - Usa cola interna para sincronización
+ * - Una vez solicitada la cancion usa updater() para marcarla como escuchada
+ * 
+ * @returns {text/plain}
+ * annotate:title="...",artist="...":URL
+ * 
+ * @sideEffects
+ * - Marca audios como escuchados
+ * - Actualiza historial
+ * - Reorganiza cache
+ * 
+ * @warning
+ * - No es endpoint REST convencional
+ * - Diseñado para motores de streaming
+ * - IceCast/LiquidSoap tiene una cola de 2 canciones
+ * 
+ * @dependencies
+ * - Revisar variable pendingResponses
+ * - Revisar variable currentPromise
+ * - Revisar variable sonando
+ * - Revisar funcion updater()
+ */
+export async function get_sounds(req, res) {
+    // Guardar la respuesta en cola
+    pendingResponses.push(res)
+
+    // Si ya hay ejecución en curso, salir
+    if (currentPromise) return
+
+    // Crear una única ejecución
+    currentPromise = (async () => {
+        try {
+            //Marca la cancion solicitada como escuchada
+            await updater()
+            //Tener en cuenta sonando.url.replace("localhost", "host.docker.internal") para desarrollo local con streaming en docker
+            const responseText =
+                `annotate:title="${sonando.titulo}",artist="${sonando.autor}":${sonando.url.replace("localhost", "host.docker.internal")}`
+
+
+            // Responder a todos los requests acumulados
+            pendingResponses.forEach(r => {
+                r.set("Content-Type", "text/plain")
+                r.send(responseText)
+            })
+
+        } finally {
+            // Limpiar estado
+            pendingResponses = []
+            currentPromise = null
+        }
+    })()
+}
+
+/**
+ * Ajusta el contador de likes de un audio.
+ * 
+ * @async
+ * @function likeContador
+ * @param {string} url - URL del audio
+ * @param {number} inc - incremento (+1 o -1)
+ * @returns {void}
+ * @description
+ * - Valida el estado de cache
+ * - Actualiza el contador de likes de una pista en DB
+ * @sideEffects
+ * - Actualiza DB
+ * - Actualiza cache en memoria
+ * @dependencies
+ * - Revisar funcion cacheServices()
+ * - Revisar funcion likeUpdater()
+ * - Revisar funcion search_audios()
+ * - Revisar variable cache
+ * - Revisar esquema cambioLikes
+ */
+export const likeContador = async (url, inc) => {
+    //Valida el estado del cache
+    if (!cacheServices(cache)) {
+        //Valida el contador de likes de las pistas
+        await likeUpdater()
+        //Obtiene el nuevo listado de pistas
+        await search_audios()
+    }
+
+    //Actualiza en DB el contador de likes de la pista 
+    await cambioLikes.updateOne(
+        { url: url },
+        { $inc: { likes: inc } }
+    )
+
+    //Actualiza en cache el contador de likes de la pista 
+    const audio = cache.data.find(prev => prev.url === url);
+    if (audio) {
+        audio.likes += inc;
+    }
+}
+
+/**
+ * Obtiene todos los audios de la base de datos y actualiza el cache.
+ * 
+ * @async
+ * @function search_audios
+ * @returns {Promise&lt;void>}
+ * @sideEffects
+ * - Si todos los audios ya fueron reproducidos (historial completo), reinicia el historial para evitar bloqueo del flujo.
+ * - Llama la funcion organizarCache con el listado de pistas
+ * @dependencies
+ * - Revisar variable historial
+ * - Revisar funcion organizarCache()
+ * - Revisar esquema getAudios
+ */
+const search_audios = async () => {
+    //Obtiene todas las pistas habilitadas de la base de datos
+    const songs = await getAudios.find({ enabled: true });
+
+    //Si ya se han escuchado todas las pistas, reinicia el historial para volverlas a reproducir
+    //Compara con el id de la cancion generado por la base de datos
+    if (songs.every(song => historial.includes(song._id.toString()))) {
+        historial = [] // reset inteligente
+    }
+
+    //Organiza el cache con las canciones obtenidas
+    organizarCache(songs)
+}
+
+/**
+ * Organiza los audios en cache
+ * @function organizarCache
+ * @param {Array&lt;Object>} songs - Lista de pistas desde DB
+ * @param {Object} song - Pista
+ * @param {String} song._id - Id de la pista
+ * @param {String} song.url - Url de la pista
+ * @param {String} song.titulo - Titulo de la pista
+ * @param {Number} song.likes - Numero de likes de la pista
+ * @param {String} song.autor - Autor de la pista
+ * @param {Boolean} song.escuchada - Indicador de pista stremeada
+ * @param {String} song.id - Id del publicador de la pista
+ * @param {Boolean} song.enabled - Estado de habilitado de la pista
+ * @param {String} song.tipo - Tipo de pista
+ * @returns {void}
+ * @description
+ * - Separa canciones y cuñas, aplicando ordenamiento y mezcla controlada.
+ * - Llama la funcion ordenarBase para organizar las pistas por su indicador de streameado y opcionalmente su numero de likes
+ * - Llama la funcion mezclar para organizar las pistas de audio segun un orden especifico
+ * @sideEffects
+ * - Actualiza cache
+ * @dependencies
+ * - Revisar la variable cache
+ * - Revisar la funcion ordenarBase()
+ * - Revisar la funcion mezclar()
+ */
+const organizarCache = (songs) => {
+    //Separar por tipo
+    const canciones = songs.filter(song => song.tipo === "cancion");
+    const cuñas = songs.filter(song => song.tipo === "cuña");
+    //Organizar por con el filtro de ordenarBase
+    const cancionesOrdenadas = canciones.sort((s1, s2) => ordenarBase(s1, s2, true));
+    const cunasOrdenadas = cuñas.sort((s1, s2) => ordenarBase(s1, s2, false));
+    //Llama la funcion mezclar
+    cache.data = mezclar(cancionesOrdenadas, cunasOrdenadas);
+    //Filtra las pistas no habilitadas
+    cache.data = cache.data.filter(prev => prev.enabled)
+    //Actualiza el Time to live del cache
+    cache.lastTtl = Date.now()
+
+}
+
+/**
+ * Organiza las pistas segun su criterio
+ * @function ordenarBase
+ * @param {Object} s1 - Pista a para comparar
+ * @param {Object} s2 - Pista b para comparar
+ * @param {String} s1._id - Id de la pista
+ * @param {String} s2._id - Id de la pista
+ * @param {Boolean} s1.escuchada - Indicador de pista stremeada
+ * @param {Boolean} s2.escuchada - Indicador de pista stremeada
+ * @param {Number} s1.likes - Numero de likes de la pista
+ * @param {Number} s2.likes - Numero de likes de la pista
+ * @param {boolean} usarLikes - Identifica si se incluye el orden por likes
+ * @returns {number}
+ * - Valor negativo: s1 tiene mayor prioridad
+ * - Valor positivo: s2 tiene mayor prioridad
+ * - 0: ambas pistas tienen la misma prioridad
+ * @description
+ * - Define el criterio de ordenamiento de audios
+ * - Prioriza no reproducidos (s.escuchada = false)
+ * - Luego por su existencia en el historial (Ya escuchada)
+ * - Luego por cantidad de likes (si aplica) (Descendiente)
+ */
+const ordenarBase = (s1, s2, usarLikes = true) => {
+    //Consulta al historial si la pista se ha escuchado
+    const h1 = historial.includes(s1._id.toString())
+    const h2 = historial.includes(s2._id.toString())
+
+    //Filtro segun estado de reproduccion segun base de datos
+    if (s1.escuchada !== s2.escuchada) {
+        return s1.escuchada ? 1 : -1;
+    }
+
+    //Filtro segun estado de escuchado en el historial
+    if (h1 !== h2) return h1 ? 1 : -1;
+
+    //Filtro segun cantidad de likes
+    if (usarLikes) {
+        return s2.likes - s1.likes;
+    }
+
+    //Igualdad de prioridad
+    return 0;
+};
+
+/**
+ * Mezcla dos listas de contenido (canciones y cuñas) intercalándolas
+ * de forma proporcional para evitar saturación de un tipo.
+ *
+ * @function mezclar
+ *
+ * @param {Array&lt;Object>} canciones - Lista de canciones
+ * @param {Array&lt;Object>} cunas - Lista de cuñas (anuncios)
+ *
+ * @returns {Array&lt;Object>} Lista final mezclada
+ *
+ * @description
+ * Genera una lista intercalada siguiendo un ratio por tipo:
+ *
+ * - Calcula un ratio canciones/cuñas:
+ *    - ratio = canciones.length / cunas.length
+ *    - Se limita entre:
+ *        - mínimo: 1
+ *        - máximo: 3
+ * 
+ * - Calcula un ratio cuñas/canciones:
+ *    - ratio = cuñas.length / canciones.length
+ *    - Se limita entre:
+ *        - mínimo: 1
+ *        - máximo: 2
+ *
+ * - Inserta elementos en el siguiente orden:
+ *    - Inserta la cantidad del ratio en canciones
+ *    - Inserta la cantidad del ratio en cuñas
+ *    - Repite hasta agotar ambas listas y agrega el exceso al final
+ *
+ * @example
+ * // Ejemplo:
+ * canciones = [C1, C2]
+ * cunas = [A1, A2, A3, A4]
+ *
+ * // ratio canciones = 3
+ * // ratio cuñas = 2
+ * resultado = [C1, A1, A2, C2, A3, A4]
+ */
+const mezclar = (canciones, cunas) => {
+    const resultado = [];
+
+    let i = 0;
+    let j = 0;
+
+    //Ratio de canciones (Minimo 1 cancion, maximo 3)
+    const ratioCanciones = cunas.length > 0
+        ? Math.min(Math.max(Math.floor(canciones.length / cunas.length), 1), 3)
+        : canciones.length;
+
+    //Ratio de cuñas (Minimo 1 cuña, maximo 2)
+    const ratioCunas = canciones.length > 0
+        ? Math.min(Math.max(Math.floor(cunas.length / canciones.length), 1), 2)
+        : cunas.length;
+
+    while (i &lt; canciones.length || j &lt; cunas.length) {
+
+        //Prioridad a canciones
+        for (let k = 0; k &lt; ratioCanciones &amp;&amp; i &lt; canciones.length; k++) {
+            resultado.push(canciones[i++]);
+        }
+
+        //Agregación de cuñas
+        for (let k = 0; k &lt; ratioCunas &amp;&amp; j &lt; cunas.length; k++) {
+            resultado.push(cunas[j++]);
+        }
+    }
+
+    return resultado;
+};
+
+/**
+ * Marca el audio actualmente en reproducción como "escuchado".
+ * 
+ * @async
+ * @function update_audio
+ * @returns {Promise&lt;void>}
+ * @description
+ * - Utiliza la variable global `sonando` para identificar el audio activo y actualiza su estado en la base de datos.
+ * - Este método es parte del flujo interno de reproducción y evita que el mismo audio sea priorizado nuevamente.
+ * @sideEffects
+ * - Actualiza el estado de escuchada en DB
+ * @dependencies
+ * - Revisar la variable sonando
+ * - Revisar el esquema updateAudio
+ */
+const update_audio = async () => {
+    if (sonando) {
+        await updateAudio.findByIdAndUpdate(
+            sonando._id,
+            { $set: { escuchada: true } }
+        )
+    }
+}
+
+/**
+ * Actualiza el estado de la pista solicitada en el stream
+ * 
+ * @async
+ * @function updater
+ * @returns {Promise&lt;void>}
+ * @description
+ * - Refrezca el cache con search_audios()
+ * - Obtiene la pista con mas prioridad del cache
+ * - Marca la pista como escuchado con update_audio() o lo agrega al historial
+ * @sideEffects
+ * - Actualiza cache en memoria
+ * - Actualiza el estado de escuchada en DB
+ * @dependencies
+ * - Revisar search_audios()
+ * - Revisar update_audio()
+ * - Revisar las variables sonando, historial y cache
+ */
+const updater = async () => {
+    //Actualiza el cache
+    await search_audios()
+    //Si hay pistas, marca como sonando la de mas prioridad
+    cache.data[0] ? sonando = cache.data[0] : "";
+    //Si la pista ya sonó, la agrega al historial, si no, la marca como escuchada
+    cache.data[0].escuchada ? historial.push(cache.data[0]._id.toString()) : await update_audio()
+}
+
+/**
+ * Sincroniza la cantidad de likes en audios
+ * @async
+ * @function likeUpdater
+ * @returns {Promise&lt;void>}
+ * @description
+ * - Compará la colección de likes con el listado de likes.
+ * @sideEffects
+ * - Actualiza DB
+ * @dependencies
+ * - Revisar esquema listaLikes
+ * - Revisar esquema cantidadLikes
+ */
+const likeUpdater = async () => {
+    //Crea una coleccion temporal con el contado de likes por url
+    const contadorLikes = await listaLikes.aggregate([
+        {
+            $group: {
+                _id: "$url",
+                count: { $sum: 1 }
+            }
+        }
+    ])
+
+    //Obtiene los likes de cada url
+    const audios = await cantidadLikes.find();
+    //Recorre los audios
+    for (const audio of audios) {
+        const likeItem = contadorLikes.find(pista => pista._id === audio.url);
+        //Si el audio no esta el contador y su cantidad no es 0, reduce sus likes a 0
+        if (!likeItem &amp;&amp; audio.likes !== 0) {
+            await cantidadLikes.updateOne(
+                { url: audio.url },
+                { $set: { likes: 0 } }
+            );
+            //Si la cantidad de likes es diferente a la del contador, cambiar su cantidad a la del contador
+        } else if (likeItem &amp;&amp; audio.likes !== likeItem.count) {
+            await cantidadLikes.updateOne(
+                { url: audio.url },
+                { $set: { likes: likeItem.count } }
+            );
+        }
+    }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-conector.html">conector</a></li></ul><h3>Classes</h3><ul><li><a href="storageService.html">storageService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#actualizar_usuario">actualizar_usuario</a></li><li><a href="global.html#authenticateToken">authenticateToken</a></li><li><a href="global.html#borrarAudio">borrarAudio</a></li><li><a href="global.html#cache">cache</a></li><li><a href="global.html#cacheServices">cacheServices</a></li><li><a href="global.html#cambioLikes">cambioLikes</a></li><li><a href="global.html#cantidadLikes">cantidadLikes</a></li><li><a href="global.html#check_code_time">check_code_time</a></li><li><a href="global.html#codeTime">codeTime</a></li><li><a href="global.html#codeVer">codeVer</a></li><li><a href="global.html#conectardb">conectardb</a></li><li><a href="global.html#currentPromise">currentPromise</a></li><li><a href="global.html#delete_audio">delete_audio</a></li><li><a href="global.html#delete_post">delete_post</a></li><li><a href="global.html#esquemaBorrarAudio">esquemaBorrarAudio</a></li><li><a href="global.html#esquemaCantidadLikes">esquemaCantidadLikes</a></li><li><a href="global.html#esquemaGetAudios">esquemaGetAudios</a></li><li><a href="global.html#esquemaGetPosts">esquemaGetPosts</a></li><li><a href="global.html#esquemaLikeChange">esquemaLikeChange</a></li><li><a href="global.html#esquemaLikeControl">esquemaLikeControl</a></li><li><a href="global.html#esquemaLikeList">esquemaLikeList</a></li><li><a href="global.html#esquemaSubirAudio">esquemaSubirAudio</a></li><li><a href="global.html#esquemaUpdAudio">esquemaUpdAudio</a></li><li><a href="global.html#generateAccessToken">generateAccessToken</a></li><li><a href="global.html#getAudios">getAudios</a></li><li><a href="global.html#getPosts">getPosts</a></li><li><a href="global.html#getUrl">getUrl</a></li><li><a href="global.html#get_audios">get_audios</a></li><li><a href="global.html#get_likeList">get_likeList</a></li><li><a href="global.html#get_poadcasts">get_poadcasts</a></li><li><a href="global.html#get_posts">get_posts</a></li><li><a href="global.html#get_sounds">get_sounds</a></li><li><a href="global.html#historial">historial</a></li><li><a href="global.html#likeContador">likeContador</a></li><li><a href="global.html#likeControl">likeControl</a></li><li><a href="global.html#likeCreate">likeCreate</a></li><li><a href="global.html#likeList">likeList</a></li><li><a href="global.html#likeUpdater">likeUpdater</a></li><li><a href="global.html#listaLikes">listaLikes</a></li><li><a href="global.html#mail_request">mail_request</a></li><li><a href="global.html#mail_transporter">mail_transporter</a></li><li><a href="global.html#mail_verificar">mail_verificar</a></li><li><a href="global.html#mezclar">mezclar</a></li><li><a href="global.html#newVerificacion">newVerificacion</a></li><li><a href="global.html#ordenarBase">ordenarBase</a></li><li><a href="global.html#organizarCache">organizarCache</a></li><li><a href="global.html#pendingResponses">pendingResponses</a></li><li><a href="global.html#poadcast">poadcast</a></li><li><a href="global.html#poadcast_creator">poadcast_creator</a></li><li><a href="global.html#reloadAccessToken">reloadAccessToken</a></li><li><a href="global.html#request_code">request_code</a></li><li><a href="global.html#save">save</a></li><li><a href="global.html#search_audios">search_audios</a></li><li><a href="global.html#sonando">sonando</a></li><li><a href="global.html#subirAudio">subirAudio</a></li><li><a href="global.html#updateAudio">updateAudio</a></li><li><a href="global.html#update_audio">update_audio</a></li><li><a href="global.html#updater">updater</a></li><li><a href="global.html#uploadPost">uploadPost</a></li><li><a href="global.html#upload_audio">upload_audio</a></li><li><a href="global.html#upload_poadcast">upload_poadcast</a></li><li><a href="global.html#upload_post">upload_post</a></li><li><a href="global.html#user">user</a></li><li><a href="global.html#userMail">userMail</a></li><li><a href="global.html#userReg">userReg</a></li><li><a href="global.html#userVer">userVer</a></li><li><a href="global.html#user_login">user_login</a></li><li><a href="global.html#user_register">user_register</a></li><li><a href="global.html#validarDeleteAudio">validarDeleteAudio</a></li><li><a href="global.html#validarDeletePost">validarDeletePost</a></li><li><a href="global.html#validarGetPosts">validarGetPosts</a></li><li><a href="global.html#validarLikeControl">validarLikeControl</a></li><li><a href="global.html#validarMailVerificar">validarMailVerificar</a></li><li><a href="global.html#validarRegistro">validarRegistro</a></li><li><a href="global.html#validarRequestCode">validarRequestCode</a></li><li><a href="global.html#validarUploadAudio">validarUploadAudio</a></li><li><a href="global.html#validarUploadPoadcast">validarUploadPoadcast</a></li><li><a href="global.html#validarUploadPost">validarUploadPost</a></li><li><a href="global.html#validarUserLogin">validarUserLogin</a></li><li><a href="global.html#verificar">verificar</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Tue May 05 2026 19:22:28 GMT-0500 (hora estándar de Colombia)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

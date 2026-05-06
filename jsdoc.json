@@ -1,0 +1,8 @@
+{
+  "source": {
+    "include": ["./", "./componentes/", "./database", "./services"]
+  },
+  "opts": {
+    "destination": "./docs/JSDoc"
+  }
+}

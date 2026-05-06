@@ -1,0 +1,710 @@
+openapi: 3.0.0
+
+info:
+  title: ChazaRadio API
+  description: API REST para la plataforma de radio social ChazaRadio
+  version: 1.0.0
+  contact:
+    name: ChazaRadio Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Servidor de desarrollo
+  - url: https://charada-api.azurewebsites.net
+    description: Servidor de producción
+
+# ============================================================================
+# AUTENTICACIÓN
+# ============================================================================
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "JWT Token en formato: Authorization: Bearer {token}"
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: usuario@email.com
+        nombre:
+          type: string
+          example: Juan Pérez
+        correo:
+          type: string
+          example: usuario@email.com
+        rol:
+          type: string
+          enum: [usuario, admin]
+          example: usuario
+        verificado:
+          type: boolean
+          example: true
+    
+    Audio:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: ObjectId
+        titulo:
+          type: string
+          example: Mi primer podcast
+        url:
+          type: string
+          example: /media/audio_1234567890.webm
+        autor:
+          type: string
+          example: usuario@email.com
+        likes_count:
+          type: integer
+          example: 42
+        fecha:
+          type: string
+          format: date-time
+        duracion:
+          type: number
+          example: 125.5
+
+    Post:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: ObjectId
+        contenido:
+          type: string
+          example: Escucha mi último podcast! 🎙️
+        link:
+          type: string
+          example: https://youtube.com/watch?v=...
+        autor:
+          type: string
+          example: usuario@email.com
+        autor_nombre:
+          type: string
+          example: Juan Pérez
+        fecha:
+          type: string
+          format: date-time
+        likes:
+          type: integer
+          example: 10
+
+    Podcast:
+      type: object
+      properties:
+        _id:
+          type: string
+          format: ObjectId
+        nombre:
+          type: string
+          example: Mi Podcast Favorito
+        autores:
+          type: string
+          example: Juan Pérez, María García
+        capitulo:
+          type: array
+          items:
+            type: object
+            properties:
+              creacion:
+                type: string
+                format: date-time
+              url:
+                type: string
+                example: https://example.com/episode1.mp3
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Token inválido o expirado"
+        status:
+          type: integer
+          example: 401
+
+paths:
+
+# ============================================================================
+# 🔐 AUTENTICACIÓN
+# ============================================================================
+
+  /api/registro:
+    post:
+      tags:
+        - Autenticación
+      summary: Registrar nuevo usuario
+      description: |
+        Crea un nuevo usuario no verificado y envía código de verificación por email.
+        El usuario debe verificar su email antes de poder hacer login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user:
+                  type: string
+                  example: juanperez
+                password:
+                  type: string
+                  example: MiPassword123!
+                email:
+                  type: string
+                  example: juan@email.com
+                id:
+                  type: string
+                  example: juan@email.com
+      responses:
+        '200':
+          description: Usuario creado, email de verificación enviado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  mensaje:
+                    type: string
+                    example: "Registrado! Verifica tu email"
+        '409':
+          description: Email o username ya existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Error en servidor
+
+  /api/verificar:
+    post:
+      tags:
+        - Autenticación
+      summary: Verificar código de email
+      description: Valida el código de verificación enviado por email e marca usuario como verificado
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: juan@email.com
+                codigo:
+                  type: string
+                  example: "123456"
+      responses:
+        '200':
+          description: Email verificado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          description: Código inválido o expirado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/recode:
+    post:
+      tags:
+        - Autenticación
+      summary: Reenviar código de verificación
+      description: Genera y envía un nuevo código de verificación por email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: juan@email.com
+      responses:
+        '200':
+          description: Código reenviado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '400':
+          description: Error al reenviar
+
+  /api/login:
+    post:
+      tags:
+        - Autenticación
+      summary: Iniciar sesión
+      description: Autentica usuario y retorna JWT (20min expiry)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: juan@email.com
+                password:
+                  type: string
+                  example: MiPassword123!
+      responses:
+        '200':
+          description: Login exitoso, JWT generado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: Contraseña incorrecta
+        '401':
+          description: Usuario no verificado
+        '404':
+          description: Usuario no existe
+
+  /api/verify:
+    get:
+      tags:
+        - Autenticación
+      summary: Validar token JWT
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Token válido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: true
+        '401':
+          description: Token inválido o expirado
+
+  /api/retoken:
+    post:
+      tags:
+        - Autenticación
+      summary: Renovar token JWT
+      security:
+        - BearerAuth: []
+      description: Genera nuevo JWT si el anterior aún es válido
+      responses:
+        '200':
+          description: Token renovado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        '401':
+          description: Token inválido
+
+# ============================================================================
+# 🎵 AUDIOS
+# ============================================================================
+
+  /api/upload:
+    post:
+      tags:
+        - Audios
+      summary: Subir archivo de audio
+      security:
+        - BearerAuth: []
+      description: Sube un archivo de audio del usuario. Requiere autenticación.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Archivo de audio (webm, mp3, wav)
+                titulo:
+                  type: string
+                  example: Mi primer podcast
+                descripcion:
+                  type: string
+                  example: Explicación de React
+      responses:
+        '200':
+          description: Audio subido exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  audioId:
+                    type: string
+                  url:
+                    type: string
+                    example: /media/audio_1234567890.webm
+                  titulo:
+                    type: string
+        '401':
+          description: Token inválido
+        '413':
+          description: Archivo excede límite de tamaño
+
+  /api/get_audios:
+    post:
+      tags:
+        - Audios
+      summary: Listar audios
+      description: Obtiene lista paginada de audios. Cacheado 180s en backend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit:
+                  type: integer
+                  example: 10
+                  default: 10
+                skip:
+                  type: integer
+                  example: 0
+                  default: 0
+      responses:
+        '200':
+          description: Lista de audios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audios:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Audio'
+                  total:
+                    type: integer
+                    example: 150
+
+  /api/delete_audio:
+    post:
+      tags:
+        - Audios
+      summary: Eliminar audio
+      security:
+        - BearerAuth: []
+      description: Elimina un audio (solo el dueño puede eliminar)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                audioId:
+                  type: string
+                  example: 507f1f77bcf86cd799439011
+      responses:
+        '200':
+          description: Audio eliminado exitosamente
+        '401':
+          description: Token inválido
+        '403':
+          description: No eres el dueño del audio
+        '404':
+          description: Audio no existe
+
+# ============================================================================
+# ❤️ LIKES
+# ============================================================================
+
+  /api/like_control:
+    post:
+      tags:
+        - Likes
+      summary: Agregar o quitar like a audio
+      security:
+        - BearerAuth: []
+      description: Toggle like en un audio (si ya likeó, quita; si no, agrega)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  example: /media/audio_1234567890.webm
+      responses:
+        '200':
+          description: Like procesado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action:
+                    type: string
+                    enum: [liked, unliked]
+                    example: liked
+                  likes_count:
+                    type: integer
+                    example: 43
+        '401':
+          description: Token inválido
+        '404':
+          description: Audio no existe
+
+  /api/get_likeList:
+    post:
+      tags:
+        - Likes
+      summary: Obtener audios likeados por el usuario
+      security:
+        - BearerAuth: []
+      description: Lista de IDs de audios que el usuario ha likeado
+      responses:
+        '200':
+          description: Lista de likes del usuario
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  likeList:
+                    type: array
+                    items:
+                      type: string
+                    example: [507f1f77bcf86cd799439011, 507f1f77bcf86cd799439012]
+        '401':
+          description: Token inválido
+
+# ============================================================================
+# 📱 POSTS (FEED SOCIAL)
+# ============================================================================
+
+  /api/upload_post:
+    post:
+      tags:
+        - Posts
+      summary: Crear nuevo post
+      security:
+        - BearerAuth: []
+      description: Publica un nuevo post en el feed social
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mensaje:
+                  type: string
+                  example: Escucha mi último podcast! 🎙️
+                link:
+                  type: string
+                  example: https://youtube.com/watch?v=...
+      responses:
+        '200':
+          description: Post creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  postId:
+                    type: string
+        '400':
+          description: Mensaje vacío
+        '401':
+          description: Token inválido
+
+  /api/get_posts:
+    post:
+      tags:
+        - Posts
+      summary: Listar posts del feed social
+      description: Obtiene posts paginados. Cacheado 60s en backend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                page:
+                  type: integer
+                  example: 1
+                  default: 1
+      responses:
+        '200':
+          description: Lista de posts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Post'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  hasMore:
+                    type: boolean
+
+  /api/delete_post:
+    post:
+      tags:
+        - Posts
+      summary: Eliminar post
+      security:
+        - BearerAuth: []
+      description: Elimina un post (solo el dueño puede eliminar)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                postId:
+                  type: string
+                  example: 507f1f77bcf86cd799439011
+      responses:
+        '200':
+          description: Post eliminado exitosamente
+        '401':
+          description: Token inválido
+        '403':
+          description: No eres el dueño del post
+        '404':
+          description: Post no existe
+
+# ============================================================================
+# 🎙️ PODCASTS
+# ============================================================================
+
+  /api/upload_poadcast:
+    post:
+      tags:
+        - Podcasts
+      summary: Crear o actualizar podcast
+      security:
+        - BearerAuth: []
+      description: Publica una nueva serie de podcast o actualiza existente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serie:
+                  type: string
+                  example: Mi Podcast Favorito
+                autores:
+                  type: string
+                  example: Juan Pérez
+                url:
+                  type: string
+                  example: https://example.com/episode1.mp3
+      responses:
+        '200':
+          description: Podcast creado/actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '401':
+          description: Token inválido
+
+  /api/get_poadcast:
+    post:
+      tags:
+        - Podcasts
+      summary: Listar podcasts
+      description: Obtiene todas las series de podcasts. Cacheado 180s en backend.
+      responses:
+        '200':
+          description: Lista de podcasts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  poadcasts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Podcast'
+
+# ============================================================================
+# 👤 USUARIO
+# ============================================================================
+
+  /api/user_data:
+    post:
+      tags:
+        - Usuario
+      summary: Obtener datos del usuario actual
+      security:
+        - BearerAuth: []
+      description: Retorna información del usuario autenticado
+      responses:
+        '200':
+          description: Datos del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Token inválido
