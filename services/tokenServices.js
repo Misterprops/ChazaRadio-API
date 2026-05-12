@@ -21,6 +21,20 @@ import jwt from "jsonwebtoken"
  * - Firma un JWT con los datos del usuario y tiempo de sesión de 15 minutos
  */
 export function generateAccessToken(user) {
+    console.log(jwt.sign(
+        //Datos del usuario
+        {
+            id: user.id,
+            correo: user.correo,
+            nombre: user.nombre,
+            rol: user.rol
+        },
+        //Secreto
+        process.env.ACCESS_TOKEN_SECRET,
+        //Tiempo de sesión
+        {
+            expiresIn: "15m"
+        }))
     //Firma JWT
     return jwt.sign(
         //Datos del usuario
@@ -64,27 +78,13 @@ export function generateAccessToken(user) {
  * @description
  * - Firma un JWT con los datos del usuario y tiempo de sesión de 15 minutos
  */
-export function reloadAccessToken(req, res) {
+export async function reloadAccessToken(req, res) {
     try {
         //Obtiene los datos del usuario
         const user = req.user;
+        console.log(user)
         //Genera un nuevo JWT
-        const token = jwt.sign(
-            //Datos del usuario
-            {
-                id: user.id,
-                correo: user.correo,
-                nombre: user.nombre,
-                rol: user.rol
-            },
-            //Secreto
-            process.env.ACCESS_TOKEN_SECRET,
-            //Tiempo de sesión
-            {
-                expiresIn: "15m"
-            }
-        )
-        res.json(token);
+        res.json(generateAccessToken(user))
     } catch (error) {
         res.status(500).json({ error: "Error al renovar el token de usuario" })
     }
@@ -128,6 +128,7 @@ export async function authenticateToken(req, res, next) {
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
 
         req.user = decoded
+
 
         next()
 

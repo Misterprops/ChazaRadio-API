@@ -78,11 +78,10 @@ app.listen(port, () => {
     console.log(`Servidor Node escuchando en http://localhost:${port}`);
 });
 
+//Url de la documentacion swagger
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-
-app.get("/api/docs.json", (req, res) => {
-    res.json(swaggerSpec);
-});
+//Url de la documentacion del backEnd
+app.use("/api/JSDoc", express.static(path.join(process.cwd(), "docs/JSDoc")));
 
 /**LOCAL ONLY - Imports para manejo de archivos*/
 import { fileURLToPath } from 'url';
@@ -143,6 +142,8 @@ await conectardb(uri)
  *         description: Audio subido
  *       400:
  *         description: Datos inconsistentes
+ *       401:
+ *         description: Usuario no verificado
  *       500:
  *         description: Error de servidor
  */
@@ -185,6 +186,8 @@ app.post("/api/get_audios", async (req, res) => { get_audios(req, res) });
  *         description: Pista deshabilitada correctamente
  *       400: 
  *         description: Datos inconsistentes
+ *       401:
+ *         description: Usuario no verificado
  *       403: 
  *         description: Usuario no habilitado para eliminar el audio
  *       500: 
@@ -243,6 +246,8 @@ app.get("/api/get_sounds", async (req, res) => { get_sounds(req, res) });
  *         description: Lista actualizada de likes del usuario
  *       400: 
  *         description: Datos invalidos
+ *       401:
+ *         description: Usuario no verificado
  *       500:
  *         description: Error interno del servidor
  */
@@ -259,6 +264,8 @@ app.post("/api/like_control", authenticateToken, validarLikeControl, async (req,
  *     responses:
  *       200:
  *         description: Lista actualizada de likes del usuario
+ *       401:
+ *         description: Usuario no verificado
  *       500:
  *         description: Error interno del servidor
  */
@@ -348,6 +355,8 @@ app.post('/api/verificar', validarMailVerificar, async (req, res) => { mail_veri
  *         description: Capitulo publicado
  *       400:
  *         description: Datos invalidos
+ *       401:
+ *         description: Usuario no verificado
  *       403:
  *         description: Usuario no coincide con el creador
  *       500:
@@ -394,6 +403,8 @@ app.post("/api/get_poadcast", async (req, res) => { get_poadcasts(req, res) });
  *         description: Capitulo publicado
  *       400:
  *         description: Datos invalidos
+ *       401:
+ *         description: Usuario no verificado
  *       500:
  *         description: Error interno del servidor
  */
@@ -422,6 +433,8 @@ app.post("/api/upload_post", authenticateToken, validarUploadPost, async (req, r
  *         description: Post eliminado
  *       400:
  *         description: Datos invalidos
+ *       401:
+ *         description: Usuario no verificado
  *       403:
  *         description: Usuario no coincide con el creador
  *       500:
@@ -449,10 +462,12 @@ app.post("/api/delete_post", authenticateToken, validarDeletePost, async (req, r
  *         description: Post eliminado
  *       400:
  *         description: Datos invalidos
+ *       401:
+ *         description: Usuario no verificado
  *       500:
  *         description: Error interno del servidor
  */
-app.post("/api/get_posts", validarGetPosts, async (req, res) => { get_posts(req, res) });
+app.post("/api/get_posts", authenticateToken, validarGetPosts, async (req, res) => { get_posts(req, res) });
 
 /**
  * @swagger
@@ -534,9 +549,9 @@ app.post('/api/login', validarUserLogin, async (req, res) => { user_login(req, r
  *       500: 
  *         description: Error interno del servidor
  */
-app.get("/api/verify", authenticateToken, (req, res) => {
+app.get("/api/verify", authenticateToken, async (req, res) => {
     try {
-        res.json({ valid: true })
+        res.status(200).json({ msg: "Usuario valido" })
     } catch (error) {
         res.status(500).json({ error: "Error al comprobar el token de usuario" })
     }
@@ -553,7 +568,29 @@ app.get("/api/verify", authenticateToken, (req, res) => {
  *     responses:
  *       200:
  *         description: Nuevo token generado
+ *       401:
+ *         description: Usuario no verificado
  *       500: 
  *         description: Error interno del servidor
  */
 app.post("/api/retoken", authenticateToken, async (req, res) => { reloadAccessToken(req, res) });
+
+/**
+ * @swagger
+ * /api/docs:
+ *   get:
+ *     summary: Obtener la estructura de la documentación de los endpoints con swagger
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: especificaciones del swagger
+ *       401:
+ *         description: Usuario no verificado
+ *       500: 
+ *         description: Error interno del servidor
+ */
+app.get("/api/docs.json", authenticateToken, (req, res) => {
+    res.json(swaggerSpec);
+});

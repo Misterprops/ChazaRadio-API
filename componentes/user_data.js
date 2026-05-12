@@ -102,6 +102,8 @@ export async function user_login(req, res) {
         if (!await bcrypt.compare(req.body.password, usuario.contraseña)) return res.status(400).json({ error: "Contraseña incorrecta" });
         //Genera su token de acceso
         const accessToken = generateAccessToken({ id: usuario.id, nombre: usuario.nombre, correo: usuario.correo, rol: usuario.rol })
+        console.log("Login"+accessToken)
+        console.log(typeof(accessToken))
         //Devuelve el token de acceso
         res.json(accessToken);
     } catch (error) {

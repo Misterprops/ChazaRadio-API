@@ -109,7 +109,7 @@ export async function delete_post(req, res) {
         }
         //Deshabilita el post
         await getPosts.findByIdAndUpdate({ _id: req.body.postId }, { enabled: false });
-        res.status(200).json({ status: "Post eliminado" });
+        res.status(200).json({ msg: "Post eliminado" });
     } catch (err) {
         res.status(500).json({ error: "Error al borrar el post" });
     }
@@ -160,6 +160,10 @@ export async function get_posts(req, res) {
             //Trae posts hasta el limite
             .limit(limit);
 
+        console.log(publicaciones)
+        console.log(typeof(publicaciones))
+        console.log(publicaciones[0])
+        console.log(typeof(publicaciones[0]))
         return res.json(publicaciones);
     } catch (err) {
         return res.status(500).json({ error: "Error al obtener los posts" });
